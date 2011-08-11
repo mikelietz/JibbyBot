@@ -152,9 +152,4 @@ class Phergie_Plugin_Habari extends Phergie_Plugin_Abstract_Command
 	$this->onDoGuid();
     }
 
-	public function onDoRev()
-	{
-		preg_match('/Revision: (\d+)/i', shell_exec('svn info http://svn.habariproject.org/habari/'), $m);
-		$this->doPrivmsg( $this->event->getSource(), $this->event->getNick() . ': Current Habari Revision: ' . $m[1] );
-	}
 }

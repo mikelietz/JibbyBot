@@ -1,16 +1,18 @@
 <?php
 
 /**
+ @TODO: Caching.
  */
 class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 {
 	public static function checkDependencies(Phergie_Driver_Abstract $client, array $plugins)
 	{
 		$errors = array();
-		
+/*		
 		if (!extension_loaded('SimpleXML')) { // probably need to change this to JSON
 			$errors[] = 'SimpleXML php extension is required';
 		}
+*/
 		return empty($errors) ? true : $errors;
 	}
 	
@@ -39,15 +41,19 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	
 	public function onPrivmsg()
 	{
-		if ( $this->event->getSource() !== '#habari' ) {
+		$channel = "#mikelietz"; // make this dynamic.
+		if ( $this->event->getSource() !== $channel ) {
 			return;
 		}
 		$message = $this->event->getArgument(1);
 		if ( preg_match("@^#(\d+)\b@", $message, $m) ) {
 			$this->onDoIssue($m[1]);
 		}
-		elseif ( preg_match("@^commit ([a-z0-9]+)\b@", $message, $m) ) {
+		elseif ( preg_match("@^commit ([a-z0-9]{4,})\b@", $message, $m) ) {
 			$this->onDoChangeset($m[1]);
+		}
+		elseif ( preg_match("@^commit (\w{0,3})\b@", $message, $m) ) {
+			$this->doPrivmsg($this->event->getSource(), "That hash is too short. Four characters or more, please.");
 		}
 /*		elseif ( preg_match("@^rex(\d+)\b@", $message, $m) ) {
                         $this->onDoExtraChangeset($m[1]);
@@ -120,23 +126,35 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		}
 	}
 
-        public function onDoExtraChangeset($rev)
-        {
-                try {
-                        $url = "https://trac.habariproject.org/habari-extras/changeset/{$rev}";
-                        $html = self::getURL($url);
-                        $line = split("\n", $html);
-                        preg_match("@<dd class=\"message searchable\">\s*<p>(.+)</p>@Us", $html, $description);
+	// prefix + "rev" to link to latest commit
+	public function onDoRev() {
+		try {
+			$jsonurl = $this->getIni('github_system.url')."/commits?per_page=1";
+			$output = file_get_contents($jsonurl,0,null,null);
+			if ( !$output ) {
+				$this->doPrivmsg($this->event->getSource(), "Something went wrong with that, sorry.");
+				return;	
+			}
 
-                        $this->doPrivmsg(
-                                $this->event->getSource(),
-                                sprintf( 'Changeset %s: %s ... %s', $rev, substr(trim(strip_tags($description[1])), 0, 100), $url)
-                        );
-                }
-                catch (Exception $e) {
-                        $this->doPrivmsg($this->event->getSource(), "Isuck".strlen($html)."Sorry, could not find changeset {$rev}.");
-                }
-        }
+			$json_output_array = json_decode( $output ); // it's an array even though there's only one item
+			$json_output = $json_output_array[0];		 // so let's just grab the first one.
+
+			$rev_hash = substr( $json_output->sha, 0, 8 ); // 8 characters should be safe, no?
+
+			// ugh. Hardcoding. Somebody make this work well and look pretty. Like using phergie.ini
+			$rev_url = "https://github.com/habari/system/commit/{$rev_hash}";
+			$rev_datetime = new DateTime($json_output->commit->committer->date);
+			$rev_date = $rev_datetime->format( 'j F Y' );
+
+			$this->doPrivmsg(
+				$this->event->getSource(),
+				sprintf( 'Latest Commit: %s: %s... (%s) %s', $rev_hash, substr( $json_output->commit->message, 0, 100), $rev_date, $rev_url)
+			);
+		}
+		catch (Exception $e) {
+			$this->doPrivmsg($this->event->getSource(), "Something went wrong with that, sorry.");
+		}
+	}
 
 	/**
 	 * Reads last commit/ticket logs
@@ -199,24 +217,6 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		return $r;
 	}
 */	
-	public static function getURL($url)
-	{
-		$opts = array(
-			'http' => array(
-				'timeout' => 3.5,
-				'method' => 'GET',
-				'user_agent' => 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1.12) Gecko/20080201 Firefox/2.0.0.12'
-			)
-		);
-		$context = stream_context_create($opts);
-		if ( $r = file_get_contents($url, false, $context) ) {
-			unset( $context );
-			return $r;
-		}
-		else {
-			throw new Exception('Could not fetch '.$url);
-		}
-	}
 }
 
 if ( !class_exists('Process') ) {
