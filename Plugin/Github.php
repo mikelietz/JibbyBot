@@ -88,7 +88,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		try {
 			$jsonurl = $this->getIni('github_habari.url')."/issues/{$ticket}";
 			$json_output = json_decode(file_get_contents($jsonurl,0,null,null));
-			$this->doPrivmsg($this->event->getSource(), sprintf( '%s -- %s', $json_output->title, $json_output->html_url ));
+			$this->doPrivmsg($this->event->getSource(), sprintf( 'Habari Issue %s: %s -- %s', $ticket, $json_output->title, $json_output->html_url ));
 		}
 		catch (Exception $e) { // actually, this doesn't work. Probably should look for a false on the file_get_contents()
 			echo $e->getMessage();
