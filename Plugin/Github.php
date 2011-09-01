@@ -49,10 +49,10 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		if ( preg_match("@^#(\d+)\b@", $message, $m) ) {
 			$this->onDoIssue($m[1]);
 		}
-		elseif ( preg_match("@^commit ([a-z0-9]{4,})\b@", $message, $m) ) {
+		elseif ( preg_match("@^commit ([a-f0-9]{4,})\b@", $message, $m) ) {
 			$this->onDoChangeset($m[1]);
 		}
-		elseif ( preg_match("@^commit (\w{0,3})\b@", $message, $m) ) {
+		elseif ( preg_match("@^commit ([a-f0-9]{1,3})$@", $message, $m) ) {
 			$this->doPrivmsg($this->event->getSource(), "That hash is too short. Four characters or more, please.");
 		}
 /*		elseif ( preg_match("@^rex(\d+)\b@", $message, $m) ) {
