@@ -43,6 +43,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		$this->url = $this->getPluginIni('url');
 		$this->api_url = $this->getPluginIni('api_url');
 		$this->default_project = $this->getPluginIni('default_project');
+		$this->default_issues = $this->getPluginIni('default_issues') ?: $this->default_project;
 	}
 
 	public static function checkDependencies(Phergie_Driver_Abstract $client, array $plugins)
@@ -131,8 +132,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	 */
 	public function onDoIssue($ticket, $project = null)
 	{
-		$project = $project ?: $this->getPluginIni('default_issues');
-		$project = $project ?: $this->default_project;
+		$project = $project ?: $this->default_issues;
 		$api_url = $this->api_url;
 		try {
 			$json_url = "{$api_url}/repos/{$project}/issues/{$ticket}";
