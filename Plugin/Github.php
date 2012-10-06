@@ -185,7 +185,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	/**
 	 * Print information and link to the latest commit for a project
 	 *
-	 * @param project String The project in the form (user|org)/repo
+	 * @param String $project optional project in the form (user|org)/repo
 	 */
 	public function onDoRev($project = null) {
 		$project = $project ?: $this->default_project;
