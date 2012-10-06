@@ -5,6 +5,39 @@
  */
 class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 {
+	/**
+	 * The Github url
+	 *
+	 * @var string
+	 */
+	private $url;
+
+	/**
+	 * Endpoint for the Github API
+	 *
+	 * @var string
+	 */
+	private $api_url;
+
+	/**
+	 * The default project to query
+	 *
+	 * @var string
+	 */
+	private $default_project;
+
+	/**
+	 * Initializes the default settings
+	 *
+	 * @return void
+	 */
+	public function onInit()
+	{
+		$this->url = $this->getPluginIni('url');
+		$this->api_url = $this->getPluginIni('api_url');
+		$this->default_project = $this->getPluginIni('default_project');
+	}
+
 	public static function checkDependencies(Phergie_Driver_Abstract $client, array $plugins)
 	{
 		$errors = array();
@@ -15,7 +48,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 */
 		return empty($errors) ? true : $errors;
 	}
-	
+
 	/**
 	 * @return void
 	 */
@@ -41,7 +74,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	
 	public function onPrivmsg()
 	{
-		$channel = "#mikelietz"; // make this dynamic.
+		$channel = "#racerbot"; // make this dynamic.
 		if ( $this->event->getSource() !== $channel ) {
 			return;
 		}
@@ -126,29 +159,39 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		}
 	}
 
-	// prefix + "rev" to link to latest commit
-	public function onDoRev() {
+	/**
+	 * Print information and link to the latest commit for a project
+	 *
+	 * @param project String The project in the form (user|org)/repo
+	 */
+	public function onDoRev($project = null) {
+		$project = $project ?: $this->default_project;
+		$project_url = "{$this->url}/{$project}";
+		$api_url = $this->api_url;
 		try {
-			$jsonurl = $this->getIni('github_system.url')."/commits?per_page=1";
-			$output = file_get_contents($jsonurl,0,null,null);
+			$json_url = "{$api_url}/repos/{$project}/commits?per_page=1";
+			$output = file_get_contents($json_url,0,null,null);
 			if ( !$output ) {
 				$this->doPrivmsg($this->event->getSource(), "Something went wrong with that, sorry.");
 				return;	
 			}
 
-			$json_output_array = json_decode( $output ); // it's an array even though there's only one item
-			$json_output = $json_output_array[0];		 // so let's just grab the first one.
+			// it's a single-element array, grab the first item
+			$json_output = current( json_decode( $output ) );
 
 			$rev_hash = substr( $json_output->sha, 0, 8 ); // 8 characters should be safe, no?
 
-			// ugh. Hardcoding. Somebody make this work well and look pretty. Like using phergie.ini
-			$rev_url = "https://github.com/habari/system/commit/{$rev_hash}";
+			$rev_url = "{$project_url}/commit/{$rev_hash}";
 			$rev_datetime = new DateTime($json_output->commit->committer->date);
 			$rev_date = $rev_datetime->format( 'j F Y' );
 
 			$this->doPrivmsg(
 				$this->event->getSource(),
-				sprintf( 'Latest Commit: %s: %s... (%s) %s', $rev_hash, substr( $json_output->commit->message, 0, 100), $rev_date, $rev_url)
+				sprintf( 'Latest Commit: %s: %s... (%s) %s',
+					$rev_hash,
+					substr( $json_output->commit->message, 0, 100 ),
+					$rev_date, $rev_url
+				)
 			);
 		}
 		catch (Exception $e) {
