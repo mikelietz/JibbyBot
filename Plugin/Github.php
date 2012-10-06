@@ -27,6 +27,13 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	private $default_project;
 
 	/**
+	 * The default project to query for issues
+	 *
+	 * @var string
+	 */
+	private $default_issues;
+
+	/**
 	 * Initializes the default settings
 	 *
 	 * @return void
@@ -116,12 +123,28 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		}
 	}
 	*/
-	public function onDoIssue($ticket)
+
+	/**
+	 * Print information and link to an issue
+	 *
+	 * @param String $project optional project in the form (user|org)/repo
+	 */
+	public function onDoIssue($ticket, $project = null)
 	{
+		$project = $project ?: $this->getPluginIni('default_issues');
+		$project = $project ?: $this->default_project;
+		$api_url = $this->api_url;
 		try {
-			$jsonurl = $this->getIni('github_habari.url')."/issues/{$ticket}";
-			$json_output = json_decode(file_get_contents($jsonurl,0,null,null));
-			$this->doPrivmsg($this->event->getSource(), sprintf( 'Habari Issue %s: %s -- %s', $ticket, $json_output->title, $json_output->html_url ));
+			$json_url = "{$api_url}/repos/{$project}/issues/{$ticket}";
+			$json_output = json_decode(file_get_contents($json_url,0,null,null));
+			$this->doPrivmsg(
+				$this->event->getSource(),
+				sprintf( 'Issue %s: %s -- %s',
+					$ticket,
+					$json_output->title,
+					$json_output->html_url
+				)
+			);
 		}
 		catch (Exception $e) { // actually, this doesn't work. Probably should look for a false on the file_get_contents()
 			echo $e->getMessage();
