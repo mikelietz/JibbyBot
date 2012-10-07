@@ -58,31 +58,49 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	}
 
 	/**
-	 * @return void
+	 * Print statistics for a project
+	 *
+	 * @param Integer $days_ago optional days back to look for stats
+	 * @param String $project optional project in the form (user|org)/repo
 	 */
-/*	public function onDoStats($days_ago = 1)
+	public function onDoStats($days_ago = 1, $project = null)
 	{
-		$stats = self::getTracStats($days_ago, $this->getIni('trac.url'), $this->getIni('trac.name'));
-		if ($stats) {
-			$this->doPrivmsg($this->event->getSource(), $stats);
+		$project = $project ?: $this->default_issues;
+		$api_url = $this->api_url;
+		try {
+			$json_url = "{$api_url}/repos/{$project}/issues";
+
+			$now = new DateTime();
+			$since = $now->sub(new DateInterval("P{$days_ago}D"));
+
+			$json_output = json_decode(file_get_contents($json_url.'?since='.$since->format('c'),0,null,null));
+
+			$opened = array_reduce($json_output, function($count, $issue) use ($since) {
+				$created = new DateTime($issue->created_at);
+				if ($created > $since) $count++;
+				return $count;
+			});
+			$opened = $opened ?: 0;
+
+			$json_output = json_decode(file_get_contents($json_url.'?since='.$since->format('c').'&state=closed',0,null,null));
+			$closed = count($json_output);
+
+			$this->doPrivmsg(
+				$this->event->getSource(),
+				sprintf( 'Opened: %s Closed: %s',
+					$opened,
+					$closed
+				)
+			);
+		}
+		catch (Exception $e) {
+			$this->doPrivmsg($this->event->getSource(), "Something went wrong with that, sorry.");
 		}
 	}
-*/
-    /**
-     * @return void
-     */
-/*    public function onDoStatsExtras($days_ago = 1)
-    {
-        $stats = self::getTracStats($days_ago, 'https://trac.habariproject.org/habari-extras', 'Habari Extras');
-        if ($stats) {
-            $this->doPrivmsg($this->event->getSource(), $stats);
-        }
-    }
-*/
-	
+
 	public function onPrivmsg()
 	{
-		$channel = "#racerbot"; // make this dynamic.
+		$channel = "#mikelietz"; // make this dynamic.
 		if ( $this->event->getSource() !== $channel ) {
 			return;
 		}
