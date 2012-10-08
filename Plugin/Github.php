@@ -67,11 +67,42 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	{
 		$project = $project ?: $this->default_issues;
 		$api_url = $this->api_url;
+
+		switch ( $days_ago ) {
+			case 'today':
+			case 'day':
+			case 1:
+				$days_ago = 1;
+				$verb = 'Today';
+				break;
+			case 'week':
+				$days_ago = date('N');
+				$verb = 'This week';
+				break;
+			case 'month':
+				$days_ago = date('j');
+				$verb = 'This month';
+				break;
+			case 'year':
+				$days_ago = date('z');
+				$verb = 'This year';
+				break;
+			case $days_ago > 0:
+				$verb = sprintf('In the past %d days', $days_ago);
+				break;
+			default:
+				$this->doPrivmsg(
+					$this->event->getSource(),
+					"I'm sorry, what the hell is a '{$days_ago}'?"
+				);
+				return;
+		}
+
+		$now = new DateTime();
+		$since = $now->sub(new DateInterval("P{$days_ago}D"));
+
 		try {
 			$json_url = "{$api_url}/repos/{$project}/issues";
-
-			$now = new DateTime();
-			$since = $now->sub(new DateInterval("P{$days_ago}D"));
 
 			$json_output = json_decode(file_get_contents($json_url.'?since='.$since->format('c'),0,null,null));
 
@@ -87,9 +118,9 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 
 			$this->doPrivmsg(
 				$this->event->getSource(),
-				sprintf( 'Opened: %s Closed: %s',
-					$opened,
-					$closed
+				sprintf(
+					'%s, %s has had %d commits, %d new issues and %d closed issues',
+					$verb, $project, $commits, $opened, $closed
 				)
 			);
 		}
