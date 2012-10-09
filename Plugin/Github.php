@@ -65,7 +65,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	 */
 	public function onDoStats($days_ago = 1, $project = null)
 	{
-		$project = $project ?: $this->default_issues;
+		$issues_project = $project ?: $this->default_issues;
 		$api_url = $this->api_url;
 
 		switch ( $days_ago ) {
@@ -102,7 +102,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		$since = $now->sub(new DateInterval("P{$days_ago}D"));
 
 		try {
-			$json_url = "{$api_url}/repos/{$project}/issues";
+			$json_url = "{$api_url}/repos/{$issues_project}/issues";
 
 			$json_output = json_decode(file_get_contents($json_url.'?since='.$since->format('c'),0,null,null));
 
@@ -115,6 +115,11 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 
 			$json_output = json_decode(file_get_contents($json_url.'?since='.$since->format('c').'&state=closed',0,null,null));
 			$closed = count($json_output);
+
+			$commits_project = $project ?: $this->default_project;
+			$json_url = "{$api_url}/repos/{$commits_project}/commits";
+			$json_output = json_decode(file_get_contents($json_url.'?since='.$since->format('c').'&state=closed',0,null,null));
+			$commits = count($json_output);
 
 			$this->doPrivmsg(
 				$this->event->getSource(),
