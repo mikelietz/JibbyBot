@@ -136,8 +136,8 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 
 	public function onPrivmsg()
 	{
-		$channel = "#mikelietz"; // make this dynamic.
-		if ( $this->event->getSource() !== $channel ) {
+		$channels = explode(',', $this->getPluginIni('speak_channels'));
+		if ( !in_array($this->event->getSource(), $channels) ) {
 			return;
 		}
 		$message = $this->event->getArgument(1);
