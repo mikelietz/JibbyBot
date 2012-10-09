@@ -150,9 +150,6 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		elseif ( preg_match("@^commit ([a-f0-9]{1,3})$@", $message, $m) ) {
 			$this->doPrivmsg($this->event->getSource(), "That hash is too short. Four characters or more, please.");
 		}
-/*		elseif ( preg_match("@^rex(\d+)\b@", $message, $m) ) {
-                        $this->onDoExtraChangeset($m[1]);
-                }*/
 		$this->processCommand($this->event->getArgument(1));
 		unset( $message, $m );
 	}
@@ -276,67 +273,6 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		}
 	}
 
-	/**
-	 * Reads last commit/ticket logs
-	 */
-/*	public static function getTracStats($days_ago, $url, $name)
-	{
-		switch ( $days_ago ) {
-			case 'today':
-			case 'day':
-			case 1:
-				$days_ago = 1;
-				$verb = 'Today';
-				break;
-			case 'week':
-				$days_ago = date('N');
-				$verb = 'This week';
-				break;
-			case 'month':
-				$days_ago = date('j');
-				$verb = 'This month';
-				break;
-			case 'year':
-				$days_ago = date('z');
-				$verb = 'This year';
-				break;
-			case $days_ago > 0:
-				$verb = sprintf('In the past %d days', $days_ago);
-				break;
-			default:
-				return "I'm sorry, what the hell is a '{$days_ago}'?";
-		}
-		try {
-			$logs = simplexml_load_string(
-				self::getURL("{$url}/timeline?changeset=on&ticket=on&max=5000&daysback={$days_ago}&format=rss")
-			);
-		}
-		catch (Exception $e) {
-			return "Sorry, could not get stats.";
-		}
-		
-		$commits = 0;
-		$new = 0;
-		$closed = 0;
-		foreach ( $logs->channel->item as $item ) {
-			switch ( (string) $item->category ) {
-				case 'changeset':
-					$commits++;
-					break;
-				case 'newticket':
-					$new++;
-					break;
-				case 'closedticket':
-					$closed++;
-					break;
-			}
-		}
-		
-		$r = sprintf( '%s, %s has had %d commits, %d new tickets and %d closed tickets', $verb, $name, $commits, $new, $closed );
-		unset($verb, $commits, $new, $closed, $logs);
-		return $r;
-	}
-*/	
 }
 
 if ( !class_exists('Process') ) {
