@@ -102,24 +102,22 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		$since = $now->sub(new DateInterval("P{$days_ago}D"));
 
 		try {
-			$json_url = "{$api_url}/repos/{$issues_project}/issues";
+			$issues_url = "{$api_url}/repos/{$issues_project}/issues";
 
-			$json_output = json_decode(file_get_contents($json_url.'?since='.$since->format('c'),0,null,null));
+			$issues = $this->api($issues_url.'?since='.$since->format('c'));
 
-			$opened = array_reduce($json_output, function($count, $issue) use ($since) {
+			$opened = array_reduce($issues, function($count, $issue) use ($since) {
 				$created = new DateTime($issue->created_at);
 				if ($created > $since) $count++;
 				return $count;
 			});
 			$opened = $opened ?: 0;
 
-			$json_output = json_decode(file_get_contents($json_url.'?since='.$since->format('c').'&state=closed',0,null,null));
-			$closed = count($json_output);
+			$closed = count($this->api($issues_url.'?since='.$since->format('c').'&state=closed',0,null,null));
 
 			$commits_project = $project ?: $this->default_project;
-			$json_url = "{$api_url}/repos/{$commits_project}/commits";
-			$json_output = json_decode(file_get_contents($json_url.'?since='.$since->format('c').'&state=closed',0,null,null));
-			$commits = count($json_output);
+			$commits_url = "{$api_url}/repos/{$commits_project}/commits";
+			$commits = count($this->api($commits_url.'?since='.$since->format('c').'&state=closed'));
 
 			$this->doPrivmsg(
 				$this->event->getSource(),
@@ -186,14 +184,14 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		$project = $project ?: $this->default_issues;
 		$api_url = $this->api_url;
 		try {
-			$json_url = "{$api_url}/repos/{$project}/issues/{$ticket}";
-			$json_output = json_decode(file_get_contents($json_url,0,null,null));
+			$issues_url = "{$api_url}/repos/{$project}/issues/{$ticket}";
+			$issue = $this->api($issues_url);
 			$this->doPrivmsg(
 				$this->event->getSource(),
 				sprintf( 'Issue %s: %s -- %s',
 					$ticket,
-					$json_output->title,
-					$json_output->html_url
+					$issue->title,
+					$issue->html_url
 				)
 			);
 		}
@@ -243,27 +241,27 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		$project_url = "{$this->url}/{$project}";
 		$api_url = $this->api_url;
 		try {
-			$json_url = "{$api_url}/repos/{$project}/commits?per_page=1";
-			$output = file_get_contents($json_url,0,null,null);
-			if ( !$output ) {
+			$commits_url = "{$api_url}/repos/{$project}/commits?per_page=1";
+			$rev = $this->api($commits_url);
+			if ( !$rev ) {
 				$this->doPrivmsg($this->event->getSource(), "Something went wrong with that, sorry.");
 				return;	
 			}
 
 			// it's a single-element array, grab the first item
-			$json_output = current( json_decode( $output ) );
+			$rev = current( $rev );
 
-			$rev_hash = substr( $json_output->sha, 0, 8 ); // 8 characters should be safe, no?
+			$rev_hash = substr( $rev->sha, 0, 8 ); // 8 characters should be safe, no?
 
 			$rev_url = "{$project_url}/commit/{$rev_hash}";
-			$rev_datetime = new DateTime($json_output->commit->committer->date);
+			$rev_datetime = new DateTime($rev->commit->committer->date);
 			$rev_date = $rev_datetime->format( 'j F Y' );
 
 			$this->doPrivmsg(
 				$this->event->getSource(),
 				sprintf( 'Latest Commit: %s: %s... (%s) %s',
 					$rev_hash,
-					substr( $json_output->commit->message, 0, 100 ),
+					substr( $rev->commit->message, 0, 100 ),
 					$rev_date, $rev_url
 				)
 			);
@@ -273,6 +271,9 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		}
 	}
 
+	protected function api($url) {
+		return json_decode(file_get_contents($url, 0, null, null));
+	}
 }
 
 if ( !class_exists('Process') ) {
