@@ -72,6 +72,10 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 				$days_ago = date('N');
 				$verb = 'This week';
 				break;
+			case 'fortnight':
+				$days_ago = date('N')+7;
+				$verb = 'This fortnight';
+				break;
 			case 'month':
 				$days_ago = date('j');
 				$verb = 'This month';
