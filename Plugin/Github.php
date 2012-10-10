@@ -137,6 +137,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 
 			if ( count($milestone) ) {
 				$milestone = current($milestone);
+				$milestone_url = $this->url."/{$issues_project}/issues?milestone=".$milestone->number;
 
 				$milestone_message = "You can help!";
 				if ($milestone->open_issues == 0) {
@@ -144,7 +145,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 				}
 				$message = sprintf(
 					'Milestone %s has %d open issues. %s %s',
-					$milestone->title, $milestone->open_issues, $milestone_message, $milestone->url
+					$milestone->title, $milestone->open_issues, $milestone_message, $milestone_url
 				);
 				$this->doPrivmsg( $this->event->getSource(), $message );
 			}
