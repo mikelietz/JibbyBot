@@ -65,31 +65,65 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	 */
 	public function onDoStats($days_ago = 1, $project = null)
 	{
-		$project = $project ?: $this->default_issues;
+		$issues_project = $project ?: $this->default_issues;
 		$api_url = $this->api_url;
+
+		switch ( $days_ago ) {
+			case 'today':
+			case 'day':
+			case 1:
+				$days_ago = 1;
+				$verb = 'Today';
+				break;
+			case 'week':
+				$days_ago = date('N');
+				$verb = 'This week';
+				break;
+			case 'month':
+				$days_ago = date('j');
+				$verb = 'This month';
+				break;
+			case 'year':
+				$days_ago = date('z');
+				$verb = 'This year';
+				break;
+			case $days_ago > 0:
+				$verb = sprintf('In the past %d days', $days_ago);
+				break;
+			default:
+				$this->doPrivmsg(
+					$this->event->getSource(),
+					"I'm sorry, what the hell is a '{$days_ago}'?"
+				);
+				return;
+		}
+
+		$now = new DateTime();
+		$since = $now->sub(new DateInterval("P{$days_ago}D"));
+
 		try {
-			$json_url = "{$api_url}/repos/{$project}/issues";
+			$issues_url = "{$api_url}/repos/{$issues_project}/issues";
 
-			$now = new DateTime();
-			$since = $now->sub(new DateInterval("P{$days_ago}D"));
+			$issues = $this->api($issues_url.'?since='.$since->format('c'));
 
-			$json_output = json_decode(file_get_contents($json_url.'?since='.$since->format('c'),0,null,null));
-
-			$opened = array_reduce($json_output, function($count, $issue) use ($since) {
+			$opened = array_reduce($issues, function($count, $issue) use ($since) {
 				$created = new DateTime($issue->created_at);
 				if ($created > $since) $count++;
 				return $count;
 			});
 			$opened = $opened ?: 0;
 
-			$json_output = json_decode(file_get_contents($json_url.'?since='.$since->format('c').'&state=closed',0,null,null));
-			$closed = count($json_output);
+			$closed = count($this->api($issues_url.'?since='.$since->format('c').'&state=closed',0,null,null));
+
+			$commits_project = $project ?: $this->default_project;
+			$commits_url = "{$api_url}/repos/{$commits_project}/commits";
+			$commits = count($this->api($commits_url.'?since='.$since->format('c').'&state=closed'));
 
 			$this->doPrivmsg(
 				$this->event->getSource(),
-				sprintf( 'Opened: %s Closed: %s',
-					$opened,
-					$closed
+				sprintf(
+					'%s, %s has had %d commits, %d new issues and %d closed issues',
+					$verb, $project, $commits, $opened, $closed
 				)
 			);
 		}
@@ -100,8 +134,8 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 
 	public function onPrivmsg()
 	{
-		$channel = "#mikelietz"; // make this dynamic.
-		if ( $this->event->getSource() !== $channel ) {
+		$channels = explode(',', $this->getPluginIni('speak_channels'));
+		if ( !in_array($this->event->getSource(), $channels) ) {
 			return;
 		}
 		$message = $this->event->getArgument(1);
@@ -114,9 +148,6 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		elseif ( preg_match("@^commit ([a-f0-9]{1,3})$@", $message, $m) ) {
 			$this->doPrivmsg($this->event->getSource(), "That hash is too short. Four characters or more, please.");
 		}
-/*		elseif ( preg_match("@^rex(\d+)\b@", $message, $m) ) {
-                        $this->onDoExtraChangeset($m[1]);
-                }*/
 		$this->processCommand($this->event->getArgument(1));
 		unset( $message, $m );
 	}
@@ -153,14 +184,14 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		$project = $project ?: $this->default_issues;
 		$api_url = $this->api_url;
 		try {
-			$json_url = "{$api_url}/repos/{$project}/issues/{$ticket}";
-			$json_output = json_decode(file_get_contents($json_url,0,null,null));
+			$issues_url = "{$api_url}/repos/{$project}/issues/{$ticket}";
+			$issue = $this->api($issues_url);
 			$this->doPrivmsg(
 				$this->event->getSource(),
 				sprintf( 'Issue %s: %s -- %s',
 					$ticket,
-					$json_output->title,
-					$json_output->html_url
+					$issue->title,
+					$issue->html_url
 				)
 			);
 		}
@@ -210,27 +241,27 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		$project_url = "{$this->url}/{$project}";
 		$api_url = $this->api_url;
 		try {
-			$json_url = "{$api_url}/repos/{$project}/commits?per_page=1";
-			$output = file_get_contents($json_url,0,null,null);
-			if ( !$output ) {
+			$commits_url = "{$api_url}/repos/{$project}/commits?per_page=1";
+			$rev = $this->api($commits_url);
+			if ( !$rev ) {
 				$this->doPrivmsg($this->event->getSource(), "Something went wrong with that, sorry.");
 				return;	
 			}
 
 			// it's a single-element array, grab the first item
-			$json_output = current( json_decode( $output ) );
+			$rev = current( $rev );
 
-			$rev_hash = substr( $json_output->sha, 0, 8 ); // 8 characters should be safe, no?
+			$rev_hash = substr( $rev->sha, 0, 8 ); // 8 characters should be safe, no?
 
 			$rev_url = "{$project_url}/commit/{$rev_hash}";
-			$rev_datetime = new DateTime($json_output->commit->committer->date);
+			$rev_datetime = new DateTime($rev->commit->committer->date);
 			$rev_date = $rev_datetime->format( 'j F Y' );
 
 			$this->doPrivmsg(
 				$this->event->getSource(),
 				sprintf( 'Latest Commit: %s: %s... (%s) %s',
 					$rev_hash,
-					substr( $json_output->commit->message, 0, 100 ),
+					substr( $rev->commit->message, 0, 100 ),
 					$rev_date, $rev_url
 				)
 			);
@@ -240,67 +271,9 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		}
 	}
 
-	/**
-	 * Reads last commit/ticket logs
-	 */
-/*	public static function getTracStats($days_ago, $url, $name)
-	{
-		switch ( $days_ago ) {
-			case 'today':
-			case 'day':
-			case 1:
-				$days_ago = 1;
-				$verb = 'Today';
-				break;
-			case 'week':
-				$days_ago = date('N');
-				$verb = 'This week';
-				break;
-			case 'month':
-				$days_ago = date('j');
-				$verb = 'This month';
-				break;
-			case 'year':
-				$days_ago = date('z');
-				$verb = 'This year';
-				break;
-			case $days_ago > 0:
-				$verb = sprintf('In the past %d days', $days_ago);
-				break;
-			default:
-				return "I'm sorry, what the hell is a '{$days_ago}'?";
-		}
-		try {
-			$logs = simplexml_load_string(
-				self::getURL("{$url}/timeline?changeset=on&ticket=on&max=5000&daysback={$days_ago}&format=rss")
-			);
-		}
-		catch (Exception $e) {
-			return "Sorry, could not get stats.";
-		}
-		
-		$commits = 0;
-		$new = 0;
-		$closed = 0;
-		foreach ( $logs->channel->item as $item ) {
-			switch ( (string) $item->category ) {
-				case 'changeset':
-					$commits++;
-					break;
-				case 'newticket':
-					$new++;
-					break;
-				case 'closedticket':
-					$closed++;
-					break;
-			}
-		}
-		
-		$r = sprintf( '%s, %s has had %d commits, %d new tickets and %d closed tickets', $verb, $name, $commits, $new, $closed );
-		unset($verb, $commits, $new, $closed, $logs);
-		return $r;
+	protected function api($url) {
+		return json_decode(file_get_contents($url, 0, null, null));
 	}
-*/	
 }
 
 if ( !class_exists('Process') ) {
