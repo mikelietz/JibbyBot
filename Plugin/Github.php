@@ -142,7 +142,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 			$this->onDoIssue($m[1]);
 		}
 		elseif ( preg_match("@^commit ([a-f0-9]{4,})\b@", $message, $m) ) {
-			$this->onDoChangeset($m[1]);
+			$this->onDoCommit($m[1]);
 		}
 		elseif ( preg_match("@^commit ([a-f0-9]{1,3})$@", $message, $m) ) {
 			$this->doPrivmsg($this->event->getSource(), "That hash is too short. Four characters or more, please.");
@@ -199,33 +199,22 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		}
 	}
 
-	public function onDoChangeset($rev)
+	public function onDoCommit($hash, $project = null)
 	{
-		$repo = "system";
+		$project = $project ?: $this->default_project;
 		try {
-			$jsonurl = $this->getIni('github_system.url')."/commits/{$rev}";
-
-			$output = file_get_contents($jsonurl,0,null,null);
-			if ( !$output ) {
-				$output = file_get_contents( $this->getIni('github_habari.url')."/commits/{$rev}" );
-				if ( !$output ) {
-					$this->doPrivmsg($this->event->getSource(), "Isuck".strlen($html)."Sorry, could not find commit {$rev}.");
-					return; // is this what we want to do? Maybe the logic here is all wrong.
-				}
-				$repo = "habari";
-			}
-
-			// ugh. Somebody make this work well and look pretty. Like using phergie.ini
-			$json_output = json_decode( $output );
-			$rev_url = "https://github.com/habari/{$repo}/commit/{$json_output->sha}";
+			$commit = $this->api->commits($project, array(
+				'commit' => $hash,
+			));
 
 			$this->doPrivmsg(
 				$this->event->getSource(),
-				sprintf( 'Commit %s: %s... %s', $rev, substr( $json_output->commit->message, 0, 100), $rev_url)
+				sprintf( 'Commit %s: %s... %s',
+				$hash, substr( $commit->commit->message, 0, 100), $commit->url)
 			);
 		}
 		catch (Exception $e) {
-			$this->doPrivmsg($this->event->getSource(), "Isuck".strlen($html)."Sorry, could not find changeset {$rev}.");
+			$this->doPrivmsg($this->event->getSource(), "Isuck".strlen($html)."Sorry, could not find changeset {$hash}.");
 		}
 	}
 
@@ -239,14 +228,12 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 
 		try {
 			// it's a single-element array, grab the first item
-			$commit = current( $this->commits($project, array(
+			$commit = current( $this->api->commits($project, array(
 				'per_page' => 1,
 			)));
 
 			$commit_hash = substr( $commit->sha, 0, 8 ); // 8 characters should be safe, no?
 
-			$project_url = "{$this->url}/{$project}";
-			$commit_url = "{$project_url}/commit/{$hash}";
 			$commit_datetime = new DateTime($commit->commit->committer->date);
 			$commit_date = $commit_datetime->format( 'j F Y' );
 
@@ -255,7 +242,7 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 				sprintf( 'Latest Commit: %s: %s... (%s) %s',
 					$commit_hash,
 					substr( $commit->commit->message, 0, 100 ),
-					$commit_date, $commit_url
+					$commit_date, $commit->url
 				)
 			);
 		}
@@ -303,6 +290,15 @@ class GithubAPI
 	public function commits($project, $options = array())
 	{
 		$url = $this->api_url."/repos/{$project}/commits";
+
+		// Check if we're retrieving a single commit
+		if (array_key_exists('commit', $options)) {
+			$url = $this->api_url."/repos/{$project}/commits/{$options['commit']}";
+			$commit = $this->call($url);
+
+			return $commit;
+		}
+
 		if (array_key_exists('since', $options)) {
 			$options['since'] = $options['since']->format('c');
 		}
