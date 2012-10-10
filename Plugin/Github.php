@@ -13,13 +13,6 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	private $url;
 
 	/**
-	 * Endpoint for the Github API
-	 *
-	 * @var string
-	 */
-	private $api_url;
-
-	/**
 	 * The default project to query
 	 *
 	 * @var string
@@ -40,8 +33,8 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	 */
 	public function onInit()
 	{
+		$this->api = new GithubAPI($this->getPluginIni('api_url'));
 		$this->url = $this->getPluginIni('url');
-		$this->api_url = $this->getPluginIni('api_url');
 		$this->default_project = $this->getPluginIni('default_project');
 		$this->default_issues = $this->getPluginIni('default_issues') ?: $this->default_project;
 	}
@@ -65,9 +58,6 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	 */
 	public function onDoStats($days_ago = 1, $project = null)
 	{
-		$issues_project = $project ?: $this->default_issues;
-		$api_url = $this->api_url;
-
 		switch ( $days_ago ) {
 			case 'today':
 			case 'day':
@@ -102,30 +92,39 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		$since = $now->sub(new DateInterval("P{$days_ago}D"));
 
 		try {
-			$issues_url = "{$api_url}/repos/{$issues_project}/issues";
-
-			$issues = $this->api($issues_url.'?since='.$since->format('c'));
+			$issues_project = $project ?: $this->default_issues;
+			$issues = $this->api->issues($issues_project, array(
+				'since' => $since,
+			));
 
 			$opened = array_reduce($issues, function($count, $issue) use ($since) {
 				$created = new DateTime($issue->created_at);
 				if ($created > $since) $count++;
 				return $count;
 			});
-			$opened = $opened ?: 0;
 
-			$closed = count($this->api($issues_url.'?since='.$since->format('c').'&state=closed',0,null,null));
+			$closed = count($this->api->issues($issues_project, array(
+				'since' => $since,
+				'state' => 'closed'
+			)));
 
 			$commits_project = $project ?: $this->default_project;
-			$commits_url = "{$api_url}/repos/{$commits_project}/commits";
-			$commits = count($this->api($commits_url.'?since='.$since->format('c').'&state=closed'));
+			$commits = count($this->api->commits($commits_project, array(
+				'since' => $since,
+			)));
 
-			$this->doPrivmsg(
-				$this->event->getSource(),
-				sprintf(
-					'%s, %s has had %d commits, %d new issues and %d closed issues',
-					$verb, $project, $commits, $opened, $closed
-				)
+			$message = sprintf(
+				'%s, %s has had %d commits, %d new issues and %d closed issues',
+				$verb, $issues_project, $commits, $opened, $closed
 			);
+			if ($commits_project != $issues_project) {
+				$message = sprintf(
+					'%s, %s has had %d commits, %s has had %d new issues and %d closed issues',
+					$verb, $commits_project, $commits, $issues_project, $opened, $closed
+				);
+			}
+
+			$this->doPrivmsg( $this->event->getSource(), $message );
 		}
 		catch (Exception $e) {
 			$this->doPrivmsg($this->event->getSource(), "Something went wrong with that, sorry.");
@@ -177,27 +176,26 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	/**
 	 * Print information and link to an issue
 	 *
+	 * @param String $issue The issue to retrieve
 	 * @param String $project optional project in the form (user|org)/repo
 	 */
-	public function onDoIssue($ticket, $project = null)
+	public function onDoIssue($issue, $project = null)
 	{
 		$project = $project ?: $this->default_issues;
-		$api_url = $this->api_url;
 		try {
-			$issues_url = "{$api_url}/repos/{$project}/issues/{$ticket}";
-			$issue = $this->api($issues_url);
+			$ticket = $this->api->issues($project, compact('issue'));
 			$this->doPrivmsg(
 				$this->event->getSource(),
 				sprintf( 'Issue %s: %s -- %s',
-					$ticket,
-					$issue->title,
-					$issue->html_url
+					$issue,
+					$ticket->title,
+					$ticket->html_url
 				)
 			);
 		}
 		catch (Exception $e) { // actually, this doesn't work. Probably should look for a false on the file_get_contents()
 			echo $e->getMessage();
-			$this->doPrivmsg($this->event->getSource(), "Sorry, could not find Issue {$ticket}.");
+			$this->doPrivmsg($this->event->getSource(), "Sorry, could not find Issue {$issue}.");
 		}
 	}
 
@@ -238,31 +236,26 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	 */
 	public function onDoRev($project = null) {
 		$project = $project ?: $this->default_project;
-		$project_url = "{$this->url}/{$project}";
-		$api_url = $this->api_url;
+
 		try {
-			$commits_url = "{$api_url}/repos/{$project}/commits?per_page=1";
-			$rev = $this->api($commits_url);
-			if ( !$rev ) {
-				$this->doPrivmsg($this->event->getSource(), "Something went wrong with that, sorry.");
-				return;	
-			}
-
 			// it's a single-element array, grab the first item
-			$rev = current( $rev );
+			$commit = current( $this->commits($project, array(
+				'per_page' => 1,
+			)));
 
-			$rev_hash = substr( $rev->sha, 0, 8 ); // 8 characters should be safe, no?
+			$commit_hash = substr( $commit->sha, 0, 8 ); // 8 characters should be safe, no?
 
-			$rev_url = "{$project_url}/commit/{$rev_hash}";
-			$rev_datetime = new DateTime($rev->commit->committer->date);
-			$rev_date = $rev_datetime->format( 'j F Y' );
+			$project_url = "{$this->url}/{$project}";
+			$commit_url = "{$project_url}/commit/{$hash}";
+			$commit_datetime = new DateTime($commit->commit->committer->date);
+			$commit_date = $commit_datetime->format( 'j F Y' );
 
 			$this->doPrivmsg(
 				$this->event->getSource(),
 				sprintf( 'Latest Commit: %s: %s... (%s) %s',
-					$rev_hash,
-					substr( $rev->commit->message, 0, 100 ),
-					$rev_date, $rev_url
+					$commit_hash,
+					substr( $commit->commit->message, 0, 100 ),
+					$commit_date, $commit_url
 				)
 			);
 		}
@@ -270,8 +263,86 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 			$this->doPrivmsg($this->event->getSource(), "Something went wrong with that, sorry.");
 		}
 	}
+}
 
-	protected function api($url) {
+/**
+ * Github API
+ *
+ * See the documentation at http://developer.github.com/v3/
+ *
+ * This class is not complete, it only supports what it needs to.
+ *
+ * @todo Add error checking
+ * @todo DRY more
+ */
+class GithubAPI
+{
+	/**
+	 * Endpoint for the Github API
+	 *
+	 * @var string
+	 */
+	private $api_url;
+
+	/**
+	 * Set the API endpoint
+	 */
+	function __construct($api_url)
+	{
+		$this->api_url = $api_url;
+	}
+
+	/**
+	 * Retrieve commits for a project from Github
+	 *
+	 * @param String $project The project to query
+	 * @param Array $options Parameters by which to filter the commits
+	 *
+	 * @return Array The returned commits
+	 */
+	public function commits($project, $options = array())
+	{
+		$url = $this->api_url."/repos/{$project}/commits";
+		if (array_key_exists('since', $options)) {
+			$options['since'] = $options['since']->format('c');
+		}
+		$params = http_build_query($options);
+		$commits = $this->call($url.'?'.$params);
+
+		return $commits;
+	}
+
+	/**
+	 * Retrieve issues for a project from Github
+	 *
+	 * @param String $project The project to query
+	 * @param Array $options Parameters by which to filter the issues
+	 *
+	 * @return Array The returned issues
+	 */
+	public function issues($project, $options = array())
+	{
+		$url = $this->api_url."/repos/{$project}/issues";
+
+		// Check if we're retrieving a single issue
+		if (array_key_exists('issue', $options)) {
+			$url = $this->api_url."/repos/{$project}/issues/{$options['issue']}";
+			$issue = $this->call($url);
+
+			return $issue;
+		}
+
+		if (array_key_exists('since', $options)) {
+			$options['since'] = $options['since']->format('c');
+		}
+		$params = http_build_query($options);
+		$issues = $this->call($url.'?'.$params);
+
+		return $issues;
+	}
+
+
+	protected function call($url) {
 		return json_decode(file_get_contents($url, 0, null, null));
 	}
 }
