@@ -55,6 +55,9 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	 *
 	 * @param Integer $days_ago optional days back to look for stats
 	 * @param String $project optional project in the form (user|org)/repo
+	 *
+	 * @todo Handle errors
+	 * @todo Handle paging
 	 */
 	public function onDoStats($days_ago = 1, $project = null)
 	{
@@ -92,6 +95,11 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 		$since = $now->sub(new DateInterval("P{$days_ago}D"));
 
 		try {
+			$commits_project = $project ?: $this->default_project;
+			$commits = count($this->api->commits($commits_project, array(
+				'since' => $since,
+			)));
+
 			$issues_project = $project ?: $this->default_issues;
 			$issues = $this->api->issues($issues_project, array(
 				'since' => $since,
@@ -108,11 +116,6 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 				'state' => 'closed'
 			)));
 
-			$commits_project = $project ?: $this->default_project;
-			$commits = count($this->api->commits($commits_project, array(
-				'since' => $since,
-			)));
-
 			$message = sprintf(
 				'%s, %s has had %d commits, %d new issues and %d closed issues',
 				$verb, $issues_project, $commits, $opened, $closed
@@ -125,6 +128,23 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 			}
 
 			$this->doPrivmsg( $this->event->getSource(), $message );
+
+			$milestone = $this->api->milestones($issues_project);
+
+			if ( count($milestone) ) {
+				$milestone = current($milestone);
+
+				$milestone_message = "You can help!";
+				if ($milestone->open_issues == 0) {
+					$milestone_message = "Release!";
+				}
+				$message = sprintf(
+					'Milestone %s has %d open issues. %s %s',
+					$milestone->title, $milestone->open_issues, $milestone_message, $milestone->url
+				);
+				$this->doPrivmsg( $this->event->getSource(), $message );
+			}
+
 		}
 		catch (Exception $e) {
 			$this->doPrivmsg($this->event->getSource(), "Something went wrong with that, sorry.");
@@ -335,6 +355,32 @@ class GithubAPI
 		$issues = $this->call($url.'?'.$params);
 
 		return $issues;
+	}
+
+	/**
+	 * Retrieve milestones for a project from Github
+	 *
+	 * @param String $project The project to query
+	 * @param Array $options Parameters by which to filter the milestones
+	 *
+	 * @return Array The returned milestones
+	 */
+	public function milestones($project, $options = array())
+	{
+		$url = $this->api_url."/repos/{$project}/milestones";
+
+		// Check if we're retrieving a single milestone
+		if (array_key_exists('milestone', $options)) {
+			$url = $this->api_url."/repos/{$project}/milestones/{$options['milestone']}";
+			$milestone = $this->call($url);
+
+			return $milestone;
+		}
+
+		$params = http_build_query($options);
+		$milestones = $this->call($url.'?'.$params);
+
+		return $milestones;
 	}
 
 
