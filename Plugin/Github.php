@@ -208,7 +208,8 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 	{
 		$project = $project ?: $this->default_issues;
 		try {
-			$ticket = $this->api->issues($project, compact('issue'));
+			$continue = false;
+			$ticket = $this->api->issues($project, compact('issue', 'continue'));
 			$this->doPrivmsg(
 				$this->event->getSource(),
 				sprintf( 'Issue %s: %s -- %s',
@@ -253,8 +254,9 @@ class Phergie_Plugin_Github extends Phergie_Plugin_Abstract_Command
 
 		try {
 			// it's a single-element array, grab the first item
-			$commit = current( $this->api->commits($project, array(
+			$commit = current($this->api->commits($project, array(
 				'per_page' => 1,
+				'continue' => false,
 			)));
 
 			$commit_hash = substr( $commit->sha, 0, 8 ); // 8 characters should be safe, no?
@@ -321,14 +323,32 @@ class GithubAPI
 			$url = $this->api_url."/repos/{$project}/commits/{$options['commit']}";
 			$commit = $this->call($url);
 
-			return $commit;
+			return $commit->data;
 		}
 
 		if (array_key_exists('since', $options)) {
 			$options['since'] = $options['since']->format('c');
 		}
 		$params = http_build_query($options);
-		$commits = $this->call($url.'?'.$params);
+		$first_page = true;
+		$commits = array();
+		$page = $this->call($url.'?'.$params);
+		// Should we get subsequent pages if they exist?
+		$continue = true;
+		if (array_key_exists('continue', $options)) {
+			$continue = $options['continue'];
+			unset($options['continue']);
+		}
+		while ($continue && isset($page->next)) {
+			// If we're not on the first page, throw out the first, duplicate, commit
+			if (!$first_page) {
+				array_shift($page->data);
+			}
+			$first_page = false;
+			$commits = array_merge($commits, $page->data);
+			$page = $this->call($page->next);
+		}
+		$commits = array_merge($commits, $page->data);
 
 		return $commits;
 	}
@@ -350,14 +370,26 @@ class GithubAPI
 			$url = $this->api_url."/repos/{$project}/issues/{$options['issue']}";
 			$issue = $this->call($url);
 
-			return $issue;
+			return $issue->data;
 		}
 
 		if (array_key_exists('since', $options)) {
 			$options['since'] = $options['since']->format('c');
 		}
 		$params = http_build_query($options);
-		$issues = $this->call($url.'?'.$params);
+		$issues = array();
+		$page = $this->call($url.'?'.$params);
+		// Should we get subsequent pages if they exist?
+		$continue = true;
+		if (array_key_exists('continue', $options)) {
+			$continue = $options['continue'];
+			unset($options['continue']);
+		}
+		while ($continue && isset($page->next)) {
+			$issues = array_merge($issues, $page->data);
+			$page = $this->call($page->next);
+		}
+		$issues = array_merge($issues, $page->data);
 
 		return $issues;
 	}
@@ -379,18 +411,71 @@ class GithubAPI
 			$url = $this->api_url."/repos/{$project}/milestones/{$options['milestone']}";
 			$milestone = $this->call($url);
 
-			return $milestone;
+			return $milestone->data;
 		}
 
 		$params = http_build_query($options);
 		$milestones = $this->call($url.'?'.$params);
 
-		return $milestones;
+		return $milestones->data;
 	}
 
 
 	protected function call($url) {
-		return json_decode(file_get_contents($url, 0, null, null));
+		$handler = curl_init();
+		$options = array(
+			CURLOPT_URL => $url,
+			CURLOPT_HEADER => true,
+			CURLOPT_RETURNTRANSFER => true,
+		);
+		curl_setopt_array($handler, $options);
+
+		$response = curl_exec($handler);
+
+		$header_size = curl_getinfo($handler, CURLINFO_HEADER_SIZE);
+		$headers = $this->http_parse_headers(substr($response, 0, $header_size));
+		$body = substr($response, $header_size);
+		curl_close($handler);
+
+		$result = new stdClass();
+		$result->data = json_decode($body);
+
+		// Get the paging information from the headers if it's there
+		// Link: <https://api.github.com/repos/habari/habari/issues?page=2&since=2012-01-01T22%3A02%3A44%2B00%3A00&state=closed>; rel="next", <https://api.github.com/repos/habari/habari/issues?page=4&since=2012-01-01T22%3A02%3A44%2B00%3A00&state=closed>; rel="last"
+
+		if (array_key_exists('Link', $headers)) {
+			$segments = explode(',', $headers['Link']);
+			foreach ($segments as $segment) {
+				preg_match('/<([^>]+)>.*rel="([^"]+)"/', $segment, $match);
+				$result->$match[2] = $match[1];
+			}
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Parse HTTP headers from a string. Stolen from 
+	 * http://php.net/manual/en/function.http-parse-headers.php so we don't have 
+	 * to rely on a pecl extension
+	 *
+	 * @param string $header_string The raw headers
+	 * @return array An associative array of headers
+	 */
+	protected function http_parse_headers($header_string) {
+		$headers = array();
+		$fields = explode("\r\n", preg_replace('/\x0D\x0A[\x09\x20]+/', ' ', $header_string));
+		foreach( $fields as $field ) {
+			if (preg_match('/([^:]+): (.+)/m', $field, $match)) {
+				$match[1] = preg_replace('/(?<=^|[\x09\x20\x2D])./e', 'strtoupper("\0")', strtolower(trim($match[1])));
+				if (isset($headers[$match[1]])) {
+					$headers[$match[1]] = array($headers[$match[1]], $match[2]);
+				} else {
+					$headers[$match[1]] = trim($match[2]);
+				}
+			}
+		}
+		return $headers;
 	}
 }
 
